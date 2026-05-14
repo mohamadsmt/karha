@@ -1,49 +1,48 @@
-# کارها
+# Karha
 
-کارها یک تسک‌منیجر لوکال، فارسی و RTL-first است. هدف نسخه اول این است که
-سادگی Todoist/Things را با چند قابلیت کاربردی TickTick ترکیب کند، بدون sync،
-telemetry یا ذخیره داده شخصی داخل ریپو.
+Karha is a local-first, Persian, RTL task manager. It aims to combine the
+simple daily workflow of Todoist and Things with a few practical TickTick-style
+tools, without sync, telemetry, or personal task data stored in the repository.
 
-مخزن عمومی پروژه:
+Public repository:
 [github.com/mohamadsmt/karha](https://github.com/mohamadsmt/karha)
 
-## قابلیت‌ها
+## Features
 
-- UI مینیمال شبیه Todoist: ناوبری کم‌نویز، ردیف‌های separator-style،
-  ابزارهای پیشرفته در بخش جمع‌شونده، drawer جزئیات به جای پنل دائمی، و سوییچ
-  تم روشن/تیره با ذخیره انتخاب روی همین مرورگر.
-- ورودی سریع فارسی با تشخیص `امروز`، `فردا`، روزهای هفته، `هفته بعد`، تاریخ
-  جلالی مثل `۱۴۰۵/۰۲/۲۰`، ساعت‌هایی مثل `ساعت ۹`، پروژه با `#کار`، بخش با
-  `/جلسه`، برچسب با `@ایمیل`، اولویت با `!1` تا `!4` و تکرارهایی مثل
-  `هر روز`، `هر هفته` و `هر ماه`.
-- Inbox، امروز، پیش‌رو، پروژه‌ها، بخش‌ها، برچسب‌ها، اولویت‌ها، subtasks،
-  توضیح، deadline، reminder، duration، کامنت/فعالیت شخصی، جستجو و فیلترهای
-  ذخیره‌شده؛ برچسب‌های روی هر تسک از داخل drawer قابل حذف یا ویرایش هستند.
-- تکمیل‌شده‌های مرتبط در صفحات امروز، پروژه و برچسب زیر یک separator جدا
-  نمایش داده می‌شوند و این بخش برای هر صفحه قابل جمع/باز کردن و ذخیره‌شدن
-  است؛ آرشیوشده‌ها هم از نمای آرشیو قابل مشاهده و بازگردانی هستند.
-- مرتب‌سازی دستی با drag and drop برای تسک‌های هم‌سطح و زیرتسک‌های هم‌والد؛
-  زیرتسک‌ها زیر parent با تورفتگی درست نمایش داده می‌شوند و قابلیت collapse،
-  تکمیل و بازکردن دوباره دارند.
-- امروز شامل تسک‌های عقب‌افتاده و امروز است؛ پیش‌رو بر اساس روزهای
-  فارسی/جلالی گروه‌بندی می‌شود.
-- نمای تقویم ماهانه/هفتگی/agenda، ماتریس آیزنهاور، عادت‌ها، Pomodoro/focus و
-  آمار پایه.
-- میانبرهای کیبورد: `q` برای افزودن سریع، `/` برای جستجو، `g` سپس `i/t/u`
-  برای رفتن به Inbox/Today/Upcoming، `j/k` برای حرکت، `Enter` برای باز کردن
-  drawer، `x` برای تکمیل، `Delete` برای آرشیو، `1..4` برای اولویت، `d` برای
-  زمان‌بندی امروز و `?` برای راهنمای میانبرها.
-- undo toast برای تکمیل، آرشیو، تغییر تاریخ و جابه‌جایی دستی.
-- SQLite لوکال با migrationهای ساده.
-- export/import JSON و export CSV.
+- Minimal Todoist-like interface with quiet navigation, separator-style task
+  rows, advanced controls in collapsible areas, a detail drawer instead of a
+  permanent side panel, and a persisted light/dark theme switch.
+- Persian quick-add parsing for today, tomorrow, weekdays, next week, Jalali
+  dates like `1405/02/20`, time expressions, projects with `#work`, sections
+  with `/meeting`, tags with `@email`, priorities with `!1` to `!4`, and daily,
+  weekly, or monthly recurrences.
+- Inbox, Today, Upcoming, projects, sections, tags, priorities, subtasks,
+  descriptions, deadlines, reminders, durations, personal comments/activity,
+  search, and saved filters.
+- Completed tasks appear under a separate separator in Today, project, and tag
+  views. That section can be collapsed per page, and archived tasks can be
+  restored from the archive view.
+- Manual drag-and-drop ordering for sibling tasks and subtasks. Subtasks stay
+  nested under their parent with proper indentation, collapse, complete, and
+  reopen behavior.
+- Today includes overdue and current-day tasks. Upcoming is grouped by Persian
+  Jalali dates.
+- Calendar views, weekly/monthly/agenda modes, Eisenhower matrix, habits,
+  Pomodoro/focus sessions, and basic stats.
+- Keyboard shortcuts: `q` for quick add, `/` for search, `g` then `i/t/u` for
+  Inbox/Today/Upcoming, `j/k` for movement, `Enter` for the detail drawer, `x`
+  for completion, `Delete` for archive, `1..4` for priority, `d` to schedule
+  for today, and `?` for the shortcut guide.
+- Undo toasts for completion, archive, date changes, and manual reordering.
+- Local SQLite storage with simple migrations.
+- JSON export/import and CSV export.
 
-## پیش‌نیازها و اجرا
+## Requirements
 
-پیش‌نیازها:
+- Node.js and npm
+- A local environment for the UI and API. The server binds to `127.0.0.1`.
 
-- Node.js و npm
-- یک محیط محلی برای اجرای API و رابط کاربری؛ برنامه فقط روی `127.0.0.1`
-  bind می‌شود.
+## Run Locally
 
 ```bash
 git clone https://github.com/mohamadsmt/karha.git
@@ -52,47 +51,50 @@ npm ci
 npm run dev
 ```
 
-رابط کاربری روی `http://127.0.0.1:5173` و API روی `http://127.0.0.1:3737`
-اجرا می‌شود.
+The UI runs at `http://127.0.0.1:5173` and the API runs at
+`http://127.0.0.1:3737`.
 
-برای نسخه build شده:
+For a production build:
 
 ```bash
 npm run build
 npm run start
 ```
 
-## محل ذخیره داده
+## Data Storage
 
-این checkout برای استفاده شخصی با فایل ignored `.env.local` به دیتابیس داخل
-خود دایرکتوری پروژه وصل شده است:
+Karha stores user data in a local SQLite database. SQLite files, local
+environment files, backups, exports, and repository-local data directories are
+ignored by Git.
 
-```text
-.local-data/karha.sqlite
-```
-
-`.local-data/`، فایل‌های SQLite، backupها، exportها و `.env.local` در
-`.gitignore` هستند و نباید روی GitHub بروند.
-
-اگر `.env.local` وجود نداشته باشد، مسیر پیش‌فرض سیستم‌عامل استفاده می‌شود:
+If no `.env.local` file is present, Karha uses the default operating-system data
+directory:
 
 - macOS: `~/Library/Application Support/karha/karha.sqlite`
 - Linux: `~/.local/share/karha/karha.sqlite`
 - Windows: `%APPDATA%/karha/karha.sqlite`
 
-اگر مسیر سفارشی می‌خواهید:
+To use a custom data directory outside the repository:
 
 ```bash
 TASKS_DATA_DIR=/absolute/path/outside/repo npm run dev
 ```
 
-اگر `TASKS_DATA_DIR` داخل خود ریپو باشد، برنامه عمدا اجرا را متوقف می‌کند مگر
-اینکه مثل تنظیمات شخصی همین checkout، `KARHA_ALLOW_REPO_DATA=1` ست شده باشد.
-این flag را فقط برای مسیرهای ignored مثل `.local-data/` استفاده کنید.
+By default, the server refuses to use a data directory inside the repository.
+This prevents accidental commits of personal task data. If you intentionally
+store local data in an ignored repository directory such as `.local-data/`, set
+both variables in `.env.local`:
 
-## API محلی
+```bash
+TASKS_DATA_DIR=.local-data
+KARHA_ALLOW_REPO_DATA=1
+```
 
-مسیرهای اصلی:
+Only use that override for ignored directories.
+
+## Local API
+
+Main routes:
 
 - `GET/POST/PATCH/DELETE /api/tasks`
 - `POST /api/tasks/quick-add`
@@ -112,7 +114,7 @@ TASKS_DATA_DIR=/absolute/path/outside/repo npm run dev
 - `GET /api/backup/csv`
 - `GET /api/settings`
 
-## توسعه
+## Development
 
 ```bash
 npm run lint
@@ -121,6 +123,6 @@ npm run build
 git diff --check
 ```
 
-این پروژه telemetry ندارد و هیچ داده‌ای به بیرون ارسال نمی‌کند.
-برای جزئیات بیشتر درباره داده‌های لوکال و فایل‌هایی که نباید منتشر شوند،
-`docs/privacy-and-data.md` را ببینید.
+Karha has no telemetry and does not send user data anywhere. See
+`docs/privacy-and-data.md` for more detail about local data and files that must
+not be published.
