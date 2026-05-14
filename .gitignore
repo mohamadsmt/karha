@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# production output
+dist/
+coverage/
+
+# local config
+.env
+.env.local
+.env.*.local
+.codex/
+
+# user data must never be committed
+.local-data/
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+backups/
+exports/
+user-data/
+
+# logs and editor state
+*.log
+.DS_Store
+.idea/
+.vscode/
