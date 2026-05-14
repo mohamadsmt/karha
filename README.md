@@ -4,6 +4,9 @@
 سادگی Todoist/Things را با چند قابلیت کاربردی TickTick ترکیب کند، بدون sync،
 telemetry یا ذخیره داده شخصی داخل ریپو.
 
+مخزن عمومی پروژه:
+[github.com/mohamadsmt/karha](https://github.com/mohamadsmt/karha)
+
 ## قابلیت‌ها
 
 - UI مینیمال شبیه Todoist: ناوبری کم‌نویز، ردیف‌های separator-style،
@@ -34,10 +37,18 @@ telemetry یا ذخیره داده شخصی داخل ریپو.
 - SQLite لوکال با migrationهای ساده.
 - export/import JSON و export CSV.
 
-## اجرا
+## پیش‌نیازها و اجرا
+
+پیش‌نیازها:
+
+- Node.js و npm
+- یک محیط محلی برای اجرای API و رابط کاربری؛ برنامه فقط روی `127.0.0.1`
+  bind می‌شود.
 
 ```bash
-npm install
+git clone https://github.com/mohamadsmt/karha.git
+cd karha
+npm ci
 npm run dev
 ```
 
@@ -111,3 +122,5 @@ git diff --check
 ```
 
 این پروژه telemetry ندارد و هیچ داده‌ای به بیرون ارسال نمی‌کند.
+برای جزئیات بیشتر درباره داده‌های لوکال و فایل‌هایی که نباید منتشر شوند،
+`docs/privacy-and-data.md` را ببینید.
