@@ -197,13 +197,17 @@ select {
   display: flex;
   align-items: center;
   gap: 2px;
-  opacity: 0.72;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, visibility 140ms ease;
+  visibility: hidden;
 }
 
 .project-row:hover .project-actions,
-.project-row:focus-within .project-actions,
-.project-row.active .project-actions {
+.project-row:focus-within .project-actions {
   opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .project-actions button,
@@ -240,6 +244,17 @@ select {
 
 .project-row.archived {
   color: var(--muted);
+}
+
+.sidebar-section > button.project-row {
+  justify-content: flex-start;
+  text-align: right;
+}
+
+.sidebar-section > button.project-row span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item:hover,
@@ -1144,6 +1159,10 @@ kbd {
   .nav-item,
   .project-row {
     justify-content: center;
+  }
+
+  .sidebar-section > button.project-row {
+    justify-content: flex-start;
   }
 
   .calendar-grid,
