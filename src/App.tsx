@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import DatePicker from 'react-multi-date-picker';
+import TimePicker from 'react-multi-date-picker/plugins/time_picker';
+import persian from 'react-date-object/calendars/persian';
+import persianFa from 'react-date-object/locales/persian_fa';
+import type DateObject from 'react-date-object';
 import {
   closestCenter,
   DndContext,
@@ -79,6 +84,7 @@ interface AppState {
   tasks: Task[];
   archivedTasks: Task[];
   projects: Project[];
+  archivedProjects: Project[];
   tags: Tag[];
   habits: Habit[];
   savedFilters: SavedFilter[];
@@ -117,12 +123,16 @@ const priorityLabels: Record<TaskPriority, string> = {
   4: 'بدون اولویت'
 };
 
+const dateTimePickerPlugins = [<TimePicker key="time" hideSeconds position="bottom" />];
+const undoToastDurationMs = 5000;
+
 export function App() {
   const [state, setState] = useState<AppState>({
     settings: null,
     tasks: [],
     archivedTasks: [],
     projects: [],
+    archivedProjects: [],
     tags: [],
     habits: [],
     savedFilters: [],
@@ -197,19 +207,26 @@ export function App() {
     }
   }, [focusRunning, focusSeconds, focusTaskId]);
 
+  useEffect(() => {
+    if (!undo) return;
+    const timeout = window.setTimeout(() => setUndo(null), undoToastDurationMs);
+    return () => window.clearTimeout(timeout);
+  }, [undo]);
+
   async function load() {
     try {
-      const [settings, tasks, archivedTasks, projects, tags, habits, savedFilters, stats] = await Promise.all([
+      const [settings, tasks, archivedTasks, projects, archivedProjects, tags, habits, savedFilters, stats] = await Promise.all([
         api.settings(),
         api.tasks('?view=all'),
         api.tasks('?view=archived'),
         api.projects(),
+        api.projects('?view=archived'),
         api.tags(),
         api.habits(),
         api.savedFilters(),
         api.stats()
       ]);
-      setState({ settings, tasks, archivedTasks, projects, tags, habits, savedFilters, stats });
+      setState({ settings, tasks, archivedTasks, projects, archivedProjects, tags, habits, savedFilters, stats });
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'خطا در بارگذاری');
@@ -405,7 +422,7 @@ export function App() {
   async function submitQuickAdd(event: FormEvent) {
     event.preventDefault();
     if (!quickAdd.trim()) return;
-    const created = await api.quickAdd(quickAdd);
+    const created = await api.quickAdd(quickAdd, { projectId: view === 'project' ? selectedProjectId : null });
     setQuickAdd('');
     setDrawerTaskId(created.id);
     await load();
@@ -441,6 +458,7 @@ export function App() {
   }
 
   async function archiveTask(task: Task) {
+    if (!window.confirm('این تسک آرشیو شود؟')) return;
     await api.archiveTask(task.id);
     setDrawerTaskId(null);
     setUndo({ message: 'تسک آرشیو شد', undo: () => api.updateTask(task.id, { archived: false }) });
@@ -562,6 +580,29 @@ export function App() {
     await load();
   }
 
+  async function editProject(project: Project) {
+    const nextName = window.prompt('نام جدید پروژه', project.name)?.trim();
+    if (!nextName || nextName === project.name) return;
+    try {
+      await api.updateProject(project.id, { name: nextName });
+      await load();
+    } catch (projectError) {
+      setError(projectError instanceof Error ? projectError.message : 'خطا در ویرایش پروژه');
+    }
+  }
+
+  async function archiveProject(project: Project) {
+    if (!window.confirm(`پروژه «${project.name}» آرشیو شود؟ تسک‌های داخل پروژه حذف نمی‌شوند.`)) return;
+    await api.archiveProject(project.id);
+    if (selectedProjectId === project.id) openView('inbox');
+    await load();
+  }
+
+  async function restoreProject(project: Project) {
+    await api.updateProject(project.id, { archived: false });
+    await load();
+  }
+
   async function addSavedFilter(event: FormEvent) {
     event.preventDefault();
     if (!newFilterName.trim()) return;
@@ -655,20 +696,49 @@ export function App() {
         <section className="sidebar-section">
           <div className="section-title">پروژه ها</div>
           {state.projects.map((project) => (
-            <button
+            <div
               className={view === 'project' && selectedProjectId === project.id ? 'project-row active' : 'project-row'}
               key={project.id}
-              type="button"
-              onClick={() => openProject(project.id)}
             >
-              <span className="dot" style={{ background: project.color }} />
-              <span>{project.name}</span>
-            </button>
+              <button className="project-open-button" type="button" onClick={() => openProject(project.id)}>
+                <span className="dot" style={{ background: project.color }} />
+                <span>{project.name}</span>
+              </button>
+              <span className="project-actions">
+                <button type="button" aria-label={`ویرایش ${project.name}`} title="ویرایش" onClick={() => void editProject(project)}>
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  aria-label={`آرشیو ${project.name}`}
+                  title="آرشیو"
+                  onClick={() => void archiveProject(project)}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
           ))}
           <form className="inline-form" onSubmit={addProject}>
             <input value={newProject} onChange={(event) => setNewProject(event.target.value)} placeholder="پروژه جدید" />
             <button type="submit" aria-label="افزودن پروژه">+</button>
           </form>
+          {state.archivedProjects.length ? (
+            <details className="archived-projects">
+              <summary>پروژه‌های آرشیوشده</summary>
+              {state.archivedProjects.map((project) => (
+                <div className="project-row archived" key={project.id}>
+                  <span className="project-open-button">
+                    <span className="dot" style={{ background: project.color }} />
+                    <span>{project.name}</span>
+                  </span>
+                  <button type="button" aria-label={`بازگردانی ${project.name}`} onClick={() => void restoreProject(project)}>
+                    بازگردانی
+                  </button>
+                </div>
+              ))}
+            </details>
+          ) : null}
         </section>
 
         <section className="sidebar-section">
@@ -1269,6 +1339,117 @@ function TaskRow({
   );
 }
 
+type DateTimeFieldName = 'dueAt' | 'deadlineAt' | 'reminderAt';
+
+function DateTimeField({
+  label,
+  field,
+  value,
+  placeholder,
+  onSave
+}: {
+  label: string;
+  field: DateTimeFieldName;
+  value: string | null;
+  placeholder: string;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
+  const inputId = `${field}-input`;
+  const pickerValue = value ? new Date(value) : null;
+  const pickerHasValueRef = useRef(Boolean(value));
+
+  useEffect(() => {
+    pickerHasValueRef.current = Boolean(value);
+  }, [value]);
+
+  async function saveTextValue(textValue: string) {
+    await onSave({ [field]: parseEditablePersianDate(textValue, value) });
+  }
+
+  async function savePickerValue(selectedDate: DateObject | null) {
+    if (!selectedDate) return;
+    const nextDate = selectedDate.toDate();
+    if (pickerHasValueRef.current) {
+      nextDate.setSeconds(0, 0);
+    } else {
+      nextDate.setHours(9, 0, 0, 0);
+      pickerHasValueRef.current = true;
+    }
+    await onSave({ [field]: nextDate.toISOString() });
+  }
+
+  return (
+    <div className="date-time-field">
+      <label className="field-label" htmlFor={inputId}>
+        {label}
+      </label>
+      <div className="date-time-control">
+        <input
+          id={inputId}
+          key={`${field}-${value ?? 'empty'}`}
+          defaultValue={formatEditablePersianDate(value)}
+          placeholder={placeholder}
+          onBlur={(event) => void saveTextValue(event.target.value)}
+        />
+        <DatePicker
+          value={pickerValue}
+          calendar={persian}
+          locale={persianFa}
+          format="YYYY/MM/DD HH:mm"
+          calendarPosition="bottom-start"
+          portal
+          plugins={dateTimePickerPlugins}
+          render={(_displayValue, openCalendar) => (
+            <button
+              className="date-picker-trigger"
+              type="button"
+              aria-label={`انتخاب ${label}`}
+              title="انتخاب تاریخ و زمان"
+              onClick={openCalendar}
+            >
+              <CalendarIcon />
+            </button>
+          )}
+          onChange={(selectedDate) => {
+            void savePickerValue(selectedDate);
+          }}
+        />
+        <button
+          className="date-clear-button"
+          type="button"
+          aria-label={`پاک کردن ${label}`}
+          title="پاک کردن"
+          onClick={() => void onSave({ [field]: null })}
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M7 3v3M17 3v3M4.5 9.5h15M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+      <path d="M8 13h3M13 13h3M8 16h3" />
+    </svg>
+  );
+}
+
+function InfoTooltip({ text, placement = 'right' }: { text: string; placement?: 'right' | 'left' }) {
+  return (
+    <span className={`info-tooltip ${placement === 'left' ? 'placement-left' : ''}`}>
+      <button className="info-tooltip-button" type="button" aria-label={text}>
+        i
+      </button>
+      <span className="info-tooltip-bubble" role="tooltip">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function TaskDrawer({
   task,
   projects,
@@ -1336,203 +1517,248 @@ function TaskDrawer({
     setEditingTagName('');
   }
 
+  function closeOnBackdropClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.target === event.currentTarget) onClose();
+  }
+
   return (
-    <div className="drawer-backdrop" role="dialog" aria-modal="true" aria-label="جزئیات تسک">
+    <div
+      className="drawer-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="جزئیات تسک"
+      onMouseDown={closeOnBackdropClick}
+    >
       <aside className="task-drawer" key={task.id}>
         <header className="drawer-header">
-          <button type="button" onClick={onClose} aria-label="بستن">
-            ×
-          </button>
-          {task.archivedAt ? (
-            <button className="quiet" type="button" onClick={() => void onRestore()}>
-              بازگردانی
+          <div className="drawer-heading">
+            <h2>جزئیات تسک</h2>
+          </div>
+          <div className="drawer-actions">
+            {task.archivedAt ? (
+              <button className="quiet" type="button" onClick={() => void onRestore()}>
+                بازگردانی
+              </button>
+            ) : (
+              <button className="danger quiet" type="button" onClick={() => void onArchive()}>
+                آرشیو
+              </button>
+            )}
+            <button className="drawer-close-button" type="button" onClick={onClose} aria-label="بستن">
+              ×
             </button>
-          ) : (
-            <button className="danger quiet" type="button" onClick={() => void onArchive()}>
-              آرشیو
-            </button>
-          )}
+          </div>
         </header>
 
-        <label className="title-input">
-          <input defaultValue={task.title} onBlur={(event) => void onSave({ title: event.target.value })} />
-        </label>
+        <div className="drawer-body">
+          <section className="drawer-primary">
+            <label className="title-input">
+              <span>عنوان</span>
+              <input defaultValue={task.title} onBlur={(event) => void onSave({ title: event.target.value })} />
+            </label>
 
-        <textarea
-          className="description"
-          defaultValue={task.notes}
-          placeholder="توضیح..."
-          onBlur={(event) => void onSave({ notes: event.target.value })}
-        />
+            <textarea
+              className="description"
+              defaultValue={task.notes}
+              placeholder="توضیح..."
+              onBlur={(event) => void onSave({ notes: event.target.value })}
+            />
+          </section>
 
-        <div className="drawer-grid">
-          <label>
-            تاریخ
-            <input
-              defaultValue={formatEditablePersianDate(task.dueAt)}
-              placeholder="امروز ساعت ۹ یا ۱۴۰۵/۰۲/۲۰ ساعت ۹"
-              onBlur={(event) => void onSave({ dueAt: parseEditablePersianDate(event.target.value, task.dueAt) })}
-            />
-          </label>
-          <label>
-            ددلاین
-            <input
-              defaultValue={formatEditablePersianDate(task.deadlineAt)}
-              placeholder="۱۴۰۵/۰۲/۳۰ ساعت ۱۷"
-              onBlur={(event) => void onSave({ deadlineAt: parseEditablePersianDate(event.target.value, task.deadlineAt) })}
-            />
-          </label>
-          <label>
-            یادآور
-            <input
-              defaultValue={formatEditablePersianDate(task.reminderAt)}
-              placeholder="فردا ساعت ۸"
-              onBlur={(event) => void onSave({ reminderAt: parseEditablePersianDate(event.target.value, task.reminderAt) })}
-            />
-          </label>
-          <label>
-            مدت
-            <input
-              inputMode="numeric"
-              defaultValue={task.durationMinutes ?? ''}
-              onBlur={(event) => void onSave({ durationMinutes: event.target.value ? Number(event.target.value) : null })}
-            />
-          </label>
-          <label>
-            پروژه
-            <select value={task.projectId ?? ''} onChange={(event) => void onSave({ projectId: event.target.value || null })}>
-              <option value="">Inbox</option>
-              {projects.map((project) => (
-                <option value={project.id} key={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            بخش
-            <input defaultValue={task.section ?? ''} onBlur={(event) => void onSave({ section: event.target.value || null })} />
-          </label>
-          <label>
-            اولویت
-            <select value={task.priority} onChange={(event) => void onSave({ priority: Number(event.target.value) })}>
-              {[1, 2, 3, 4].map((priority) => (
-                <option value={priority} key={priority}>
-                  {priorityLabels[priority as TaskPriority]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            تکرار
-            <select
-              value={task.recurrence?.frequency ?? ''}
-              onChange={(event) =>
-                void onSave({
-                  recurrence: event.target.value ? { frequency: event.target.value, interval: 1 } : null
-                })
-              }
-            >
-              <option value="">بدون تکرار</option>
-              <option value="daily">هر روز</option>
-              <option value="weekly">هر هفته</option>
-              <option value="monthly">هر ماه</option>
-            </select>
-          </label>
-        </div>
+          <section className="drawer-section">
+            <h3>زمان‌بندی</h3>
+            <div className="drawer-grid">
+              <DateTimeField
+                label="تاریخ"
+                field="dueAt"
+                value={task.dueAt}
+                placeholder="امروز ساعت ۹ یا ۱۴۰۵/۰۲/۲۰ ساعت ۹"
+                onSave={onSave}
+              />
+              <DateTimeField
+                label="ددلاین"
+                field="deadlineAt"
+                value={task.deadlineAt}
+                placeholder="۱۴۰۵/۰۲/۳۰ ساعت ۱۷"
+                onSave={onSave}
+              />
+              <DateTimeField
+                label="یادآور"
+                field="reminderAt"
+                value={task.reminderAt}
+                placeholder="فردا ساعت ۸"
+                onSave={onSave}
+              />
+              <div className="drawer-field">
+                <div className="field-label-row">
+                  <label htmlFor="task-duration-input">مدت زمان (دقیقه)</label>
+                  <InfoTooltip placement="left" text="عدد را به دقیقه وارد کنید؛ برای برآورد زمان انجام تسک." />
+                </div>
+                <input
+                  id="task-duration-input"
+                  inputMode="numeric"
+                  aria-label="مدت زمان به دقیقه"
+                  placeholder="مثلاً ۳۰"
+                  defaultValue={task.durationMinutes ?? ''}
+                  onBlur={(event) => void onSave({ durationMinutes: event.target.value ? Number(event.target.value) : null })}
+                />
+              </div>
+            </div>
+          </section>
 
-        <section className="drawer-section">
-          <h3>برچسب ها</h3>
-          <div className="tag-list">
-            {task.tags.map((tag) => (
-              editingTagId === tag.id ? (
-                <form className="tag-edit-form" key={tag.id} onSubmit={editTag}>
-                  <input value={editingTagName} onChange={(event) => setEditingTagName(event.target.value)} />
-                  <button type="submit">ذخیره</button>
-                  <button
-                    className="quiet-button"
-                    type="button"
-                    onClick={() => {
-                      setEditingTagId(null);
-                      setEditingTagName('');
-                    }}
-                  >
-                    لغو
-                  </button>
-                </form>
-              ) : (
-                <span className="tag-chip" key={tag.id}>
-                  @{tag.name}
-                  <button
-                    type="button"
-                    aria-label={`ویرایش ${tag.name}`}
-                    onClick={() => {
-                      setEditingTagId(tag.id);
-                      setEditingTagName(tag.name);
-                    }}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 16 16">
-                      <path d="M11.8 2.2a1.4 1.4 0 0 1 2 2L5.4 12.6 2.2 13.8l1.2-3.2 8.4-8.4Z" />
-                      <path d="m10.8 3.2 2 2" />
-                    </svg>
-                  </button>
-                  <button type="button" aria-label={`حذف ${tag.name}`} onClick={() => void removeTag(tag.id)}>
-                    ×
-                  </button>
-                </span>
-              )
-            ))}
-            {tags
-              .filter((tag) => !task.tags.some((taskTag) => taskTag.id === tag.id))
-              .slice(0, 4)
-              .map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => void onSave({ tagIds: [...task.tags.map((item) => item.id), tag.id] })}
+          <section className="drawer-section">
+            <h3>جزئیات</h3>
+            <div className="drawer-grid">
+              <label>
+                پروژه
+                <select value={task.projectId ?? ''} onChange={(event) => void onSave({ projectId: event.target.value || null })}>
+                  <option value="">Inbox</option>
+                  {projects.map((project) => (
+                    <option value={project.id} key={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="drawer-field">
+                <div className="field-label-row">
+                  <label htmlFor="task-section-input">بخش پروژه</label>
+                  <InfoTooltip placement="left" text="گروه‌بندی داخل همان پروژه؛ در افزودن سریع با /بخش هم تنظیم می‌شود." />
+                </div>
+                <input
+                  id="task-section-input"
+                  aria-label="بخش پروژه"
+                  defaultValue={task.section ?? ''}
+                  placeholder="مثلاً جلسه یا بک‌لاگ"
+                  onBlur={(event) => void onSave({ section: event.target.value || null })}
+                />
+              </div>
+              <label>
+                اولویت
+                <select value={task.priority} onChange={(event) => void onSave({ priority: Number(event.target.value) })}>
+                  {[1, 2, 3, 4].map((priority) => (
+                    <option value={priority} key={priority}>
+                      {priorityLabels[priority as TaskPriority]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                تکرار
+                <select
+                  value={task.recurrence?.frequency ?? ''}
+                  onChange={(event) =>
+                    void onSave({
+                      recurrence: event.target.value ? { frequency: event.target.value, interval: 1 } : null
+                    })
+                  }
                 >
-                  @{tag.name}
+                  <option value="">بدون تکرار</option>
+                  <option value="daily">هر روز</option>
+                  <option value="weekly">هر هفته</option>
+                  <option value="monthly">هر ماه</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="drawer-section">
+            <h3>برچسب ها</h3>
+            <div className="tag-list">
+              {task.tags.map((tag) => (
+                editingTagId === tag.id ? (
+                  <form className="tag-edit-form" key={tag.id} onSubmit={editTag}>
+                    <input value={editingTagName} onChange={(event) => setEditingTagName(event.target.value)} />
+                    <button type="submit">ذخیره</button>
+                    <button
+                      className="quiet-button"
+                      type="button"
+                      onClick={() => {
+                        setEditingTagId(null);
+                        setEditingTagName('');
+                      }}
+                    >
+                      لغو
+                    </button>
+                  </form>
+                ) : (
+                  <span className="tag-chip" key={tag.id}>
+                    @{tag.name}
+                    <button
+                      type="button"
+                      aria-label={`ویرایش ${tag.name}`}
+                      onClick={() => {
+                        setEditingTagId(tag.id);
+                        setEditingTagName(tag.name);
+                      }}
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 16 16">
+                        <path d="M11.8 2.2a1.4 1.4 0 0 1 2 2L5.4 12.6 2.2 13.8l1.2-3.2 8.4-8.4Z" />
+                        <path d="m10.8 3.2 2 2" />
+                      </svg>
+                    </button>
+                    <button type="button" aria-label={`حذف ${tag.name}`} onClick={() => void removeTag(tag.id)}>
+                      ×
+                    </button>
+                  </span>
+                )
+              ))}
+              {tags
+                .filter((tag) => !task.tags.some((taskTag) => taskTag.id === tag.id))
+                .slice(0, 4)
+                .map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => void onSave({ tagIds: [...task.tags.map((item) => item.id), tag.id] })}
+                  >
+                    @{tag.name}
+                  </button>
+                ))}
+            </div>
+            <form className="inline-form wide" onSubmit={addTag}>
+              <input value={tagName} onChange={(event) => setTagName(event.target.value)} placeholder="@برچسب جدید" />
+              <button type="submit">افزودن</button>
+            </form>
+          </section>
+
+          <section className="drawer-section">
+            <h3>زیرتسک ها</h3>
+            <div className="drawer-list">
+              {task.subtasks?.map((subtask) => (
+                <button
+                  className={subtask.completedAt ? 'subtask done' : 'subtask'}
+                  key={subtask.id}
+                  type="button"
+                  onClick={() => void onToggleSubtask(subtask)}
+                >
+                  <span className={subtask.priority <= 2 ? `check p${subtask.priority}` : 'check'} />
+                  <span>{subtask.title}</span>
                 </button>
               ))}
-          </div>
-          <form className="inline-form wide" onSubmit={addTag}>
-            <input value={tagName} onChange={(event) => setTagName(event.target.value)} placeholder="@برچسب جدید" />
-            <button type="submit">افزودن</button>
-          </form>
-        </section>
+            </div>
+            <form className="inline-form wide" onSubmit={addSubtask}>
+              <input value={subtaskTitle} onChange={(event) => setSubtaskTitle(event.target.value)} placeholder="زیرتسک جدید" />
+              <button type="submit">افزودن</button>
+            </form>
+          </section>
 
-        <section className="drawer-section">
-          <h3>زیرتسک ها</h3>
-          {task.subtasks?.map((subtask) => (
-            <button
-              className={subtask.completedAt ? 'subtask done' : 'subtask'}
-              key={subtask.id}
-              type="button"
-              onClick={() => void onToggleSubtask(subtask)}
-            >
-              <span className={subtask.priority <= 2 ? `check p${subtask.priority}` : 'check'} />
-              <span>{subtask.title}</span>
-            </button>
-          ))}
-          <form className="inline-form wide" onSubmit={addSubtask}>
-            <input value={subtaskTitle} onChange={(event) => setSubtaskTitle(event.target.value)} placeholder="زیرتسک جدید" />
-            <button type="submit">افزودن</button>
-          </form>
-        </section>
-
-        <section className="drawer-section">
-          <h3>کامنت و فعالیت</h3>
-          {task.comments?.map((item) => (
-            <p className="comment" key={item.id}>
-              {item.body}
-              <small>{formatPersianDate(item.createdAt)} {formatPersianTime(item.createdAt)}</small>
-            </p>
-          ))}
-          <form className="inline-form wide" onSubmit={addComment}>
-            <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="یادداشت فعالیت..." />
-            <button type="submit">ثبت</button>
-          </form>
-        </section>
+          <section className="drawer-section">
+            <h3>کامنت و فعالیت</h3>
+            <div className="drawer-list">
+              {task.comments?.map((item) => (
+                <p className="comment" key={item.id}>
+                  {item.body}
+                  <small>{formatPersianDate(item.createdAt)} {formatPersianTime(item.createdAt)}</small>
+                </p>
+              ))}
+            </div>
+            <form className="inline-form wide" onSubmit={addComment}>
+              <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="یادداشت فعالیت..." />
+              <button type="submit">ثبت</button>
+            </form>
+          </section>
+        </div>
       </aside>
     </div>
   );

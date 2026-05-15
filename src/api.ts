@@ -34,10 +34,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   settings: () => request<AppSettings>('/api/settings'),
   tasks: (params = '') => request<Task[]>(`/api/tasks${params}`),
-  quickAdd: (title: string) =>
+  quickAdd: (title: string, context?: { projectId?: string | null }) =>
     request<Task>('/api/tasks/quick-add', {
       method: 'POST',
-      body: JSON.stringify({ title })
+      body: JSON.stringify({ title, projectId: context?.projectId ?? undefined })
     }),
   updateTask: (id: string, body: Record<string, unknown>) =>
     request<Task>(`/api/tasks/${id}`, {
@@ -65,12 +65,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ dueAt, scheduledStart })
     }),
-  projects: () => request<Project[]>('/api/projects'),
+  projects: (params = '') => request<Project[]>(`/api/projects${params}`),
   createProject: (name: string) =>
     request<Project>('/api/projects', {
       method: 'POST',
       body: JSON.stringify({ name })
     }),
+  updateProject: (id: string, body: Record<string, unknown>) =>
+    request<Project>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }),
+  archiveProject: (id: string) => request<Project>(`/api/projects/${id}`, { method: 'DELETE' }),
   tags: () => request<Tag[]>('/api/tags'),
   createTag: (name: string) =>
     request<Tag>('/api/tags', {

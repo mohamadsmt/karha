@@ -57,6 +57,7 @@ interface ProjectRow {
   id: string;
   name: string;
   color: string;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -106,6 +107,10 @@ export interface TaskQuery {
   search?: string;
   projectId?: string;
   tagId?: string;
+}
+
+export interface ProjectQuery {
+  view?: string;
 }
 
 export interface CreateTaskInput {
@@ -209,15 +214,18 @@ export class KarhaDatabase {
     return this.requireTask(id);
   }
 
-  quickAddTask(rawTitle: string): Task {
+  quickAddTask(rawTitle: string, fallbackProjectId: string | null = null): Task {
     const parsed = parsePersianQuickAdd(rawTitle);
     const project = parsed.projectName ? this.findOrCreateProject(parsed.projectName) : null;
+    const fallbackProject = fallbackProjectId
+      ? optionalRow<ProjectRow>(this.db.prepare('SELECT * FROM projects WHERE id = ?').get(fallbackProjectId))
+      : null;
     const tagIds = parsed.tagNames.map((name, index) => this.findOrCreateTag(name, tagColors[index % tagColors.length]).id);
 
     return this.createTask({
       title: parsed.title || rawTitle.trim(),
       dueAt: parsed.dueAt,
-      projectId: project?.id ?? null,
+      projectId: project?.id ?? fallbackProject?.id ?? null,
       section: parsed.sectionName,
       priority: parsed.priority,
       recurrence: parsed.recurrence,
@@ -298,17 +306,34 @@ export class KarhaDatabase {
     return this.updateTask(id, { archived: true });
   }
 
-  listProjects(): Project[] {
-    return rows<ProjectRow>(this.db.prepare('SELECT * FROM projects ORDER BY created_at ASC').all()).map(mapProject);
+  listProjects(query: ProjectQuery = {}): Project[] {
+    let where = 'WHERE archived_at IS NULL';
+    if (query.view === 'archived') where = 'WHERE archived_at IS NOT NULL';
+    if (query.view === 'all') where = '';
+    return rows<ProjectRow>(this.db.prepare(`SELECT * FROM projects ${where} ORDER BY created_at ASC`).all()).map(mapProject);
   }
 
   createProject(input: { name: string; color?: string }): Project {
     const now = new Date().toISOString();
     const id = randomUUID();
     this.db
-      .prepare('INSERT INTO projects (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO projects (id, name, color, archived_at, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)')
       .run(id, input.name.trim(), input.color ?? '#2563eb', now, now);
     return mapProject(row<ProjectRow>(this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id)));
+  }
+
+  updateProject(id: string, input: { name?: string; color?: string; archived?: boolean }): Project {
+    const existing = this.requireProject(id);
+    const now = new Date().toISOString();
+    const archivedAt = input.archived === undefined ? existing.archivedAt : input.archived ? now : null;
+    this.db
+      .prepare('UPDATE projects SET name = ?, color = ?, archived_at = ?, updated_at = ? WHERE id = ?')
+      .run(input.name?.trim() || existing.name, input.color ?? existing.color, archivedAt, now, id);
+    return this.requireProject(id);
+  }
+
+  archiveProject(id: string): Project {
+    return this.updateProject(id, { archived: true });
   }
 
   findOrCreateProject(name: string, color = '#2563eb'): Project {
@@ -473,7 +498,7 @@ export class KarhaDatabase {
       this.listTasks({ view: 'all' }),
       this.listHabits(),
       this.listFocusSessions(),
-      new Map(this.listProjects().map((project) => [project.id, project.name]))
+      new Map(this.listProjects({ view: 'all' }).map((project) => [project.id, project.name]))
     );
   }
 
@@ -481,7 +506,7 @@ export class KarhaDatabase {
     return {
       exportedAt: new Date().toISOString(),
       version: 1,
-      projects: this.listProjects(),
+      projects: this.listProjects({ view: 'all' }),
       tags: this.listTags(),
       tasks: this.loadTasksWithRelations(),
       taskComments: rows<TaskCommentRow>(this.db.prepare('SELECT * FROM task_comments ORDER BY created_at ASC').all()).map(
@@ -502,8 +527,8 @@ export class KarhaDatabase {
 
       for (const project of payload.projects ?? []) {
         this.db
-          .prepare('INSERT INTO projects (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-          .run(project.id, project.name, project.color, project.createdAt, project.updatedAt);
+          .prepare('INSERT INTO projects (id, name, color, archived_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(project.id, project.name, project.color, project.archivedAt ?? null, project.createdAt, project.updatedAt);
       }
 
       for (const tag of payload.tags ?? []) {
@@ -600,7 +625,7 @@ export class KarhaDatabase {
 
   exportTasksCsv(): string {
     const headers = ['title', 'notes', 'due_at', 'deadline_at', 'reminder_at', 'priority', 'completed_at', 'project', 'section', 'tags'];
-    const projects = new Map(this.listProjects().map((project) => [project.id, project.name]));
+    const projects = new Map(this.listProjects({ view: 'all' }).map((project) => [project.id, project.name]));
     const rows = this.listTasks({ view: 'all' }).map((task) => [
       task.title,
       task.notes,
@@ -628,6 +653,7 @@ export class KarhaDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         color TEXT NOT NULL,
+        archived_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -713,6 +739,7 @@ export class KarhaDatabase {
       CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id);
       CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
     `);
+    this.ensureProjectColumn('archived_at', 'TEXT');
     this.ensureTaskColumn('deadline_at', 'TEXT');
     this.ensureTaskColumn('reminder_at', 'TEXT');
   }
@@ -815,6 +842,12 @@ export class KarhaDatabase {
     return task;
   }
 
+  private requireProject(id: string): Project {
+    const project = optionalRow<ProjectRow>(this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
+    if (!project) throw new Error(`Project not found: ${id}`);
+    return mapProject(project);
+  }
+
   private normalizeOrder(parentId: string | null): void {
     const statement = parentId
       ? this.db.prepare('SELECT id FROM tasks WHERE parent_id = ? ORDER BY order_index ASC, created_at ASC')
@@ -828,6 +861,13 @@ export class KarhaDatabase {
     const columns = rows<{ name: string }>(this.db.prepare('PRAGMA table_info(tasks)').all());
     if (!columns.some((column) => column.name === name)) {
       this.db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
+    }
+  }
+
+  private ensureProjectColumn(name: string, type: string): void {
+    const columns = rows<{ name: string }>(this.db.prepare('PRAGMA table_info(projects)').all());
+    if (!columns.some((column) => column.name === name)) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN ${name} ${type}`);
     }
   }
 }
@@ -884,6 +924,7 @@ function mapProject(row: ProjectRow): Project {
     id: row.id,
     name: row.name,
     color: row.color,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

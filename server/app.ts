@@ -40,9 +40,9 @@ export async function handleApiRequest(request: Request, context: ApiContext): P
     }
 
     if (method === 'POST' && pathname === '/api/tasks/quick-add') {
-      const body = (await request.json()) as { title?: string };
+      const body = (await request.json()) as { title?: string; projectId?: string | null };
       if (!body.title?.trim()) return json({ error: 'Task title is required.' }, { status: 400 });
-      return json(context.store.quickAddTask(body.title), { status: 201 });
+      return json(context.store.quickAddTask(body.title, body.projectId ?? null), { status: 201 });
     }
 
     const taskId = matchId(pathname, '/api/tasks/');
@@ -76,10 +76,17 @@ export async function handleApiRequest(request: Request, context: ApiContext): P
     }
 
     if (method === 'GET' && pathname === '/api/projects') {
-      return json(context.store.listProjects());
+      return json(context.store.listProjects({ view: url.searchParams.get('view') ?? undefined }));
     }
     if (method === 'POST' && pathname === '/api/projects') {
       return json(context.store.createProject(await request.json()), { status: 201 });
+    }
+    const projectId = matchId(pathname, '/api/projects/');
+    if (projectId && method === 'PATCH') {
+      return json(context.store.updateProject(projectId, await request.json()));
+    }
+    if (projectId && method === 'DELETE') {
+      return json(context.store.archiveProject(projectId));
     }
 
     if (method === 'GET' && pathname === '/api/tags') {

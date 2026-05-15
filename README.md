@@ -19,6 +19,8 @@ Public repository:
 - Inbox, Today, Upcoming, projects, sections, tags, priorities, subtasks,
   descriptions, deadlines, reminders, durations, personal comments/activity,
   search, and saved filters.
+- Projects can be renamed, archived without deleting their tasks, and restored
+  from the archived-projects section.
 - Completed tasks appear under a separate separator in Today, project, and tag
   views. That section can be collapsed per page, and archived tasks can be
   restored from the archive view.
@@ -102,6 +104,7 @@ Main routes:
 - `POST /api/tasks/:id/reorder`
 - `POST /api/tasks/:id/reschedule`
 - `GET/POST /api/projects`
+- `PATCH/DELETE /api/projects/:id`
 - `GET/POST /api/tags`
 - `GET/POST /api/habits`
 - `POST /api/habits/:id/log`

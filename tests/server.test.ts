@@ -53,6 +53,72 @@ describe('local API', () => {
     context.store.close();
   });
 
+  it('uses the quick-add fallback project unless text names another project', async () => {
+    const context = createContext();
+    const fallbackProject = context.store.createProject({ name: 'کار' });
+    const fallbackResponse = await handleApiRequest(
+      new Request('http://local/api/tasks/quick-add', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'مرور تسک ها', projectId: fallbackProject.id })
+      }),
+      context
+    );
+    const explicitResponse = await handleApiRequest(
+      new Request('http://local/api/tasks/quick-add', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'مرور تسک ها #شخصی', projectId: fallbackProject.id })
+      }),
+      context
+    );
+
+    const fallbackTask = await fallbackResponse.json();
+    const explicitTask = await explicitResponse.json();
+    const explicitProject = context.store.listProjects().find((project) => project.name === 'شخصی');
+
+    expect(fallbackTask.projectId).toBe(fallbackProject.id);
+    expect(explicitTask.projectId).toBe(explicitProject?.id);
+    expect(explicitTask.projectId).not.toBe(fallbackProject.id);
+    context.store.close();
+  });
+
+  it('updates, archives, and restores projects without deleting their tasks', async () => {
+    const context = createContext();
+    const project = context.store.createProject({ name: 'کاری' });
+    const task = context.store.createTask({ title: 'تسک پروژه', projectId: project.id });
+
+    const updateResponse = await handleApiRequest(
+      new Request(`http://local/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: 'کاری ویرایش‌شده' })
+      }),
+      context
+    );
+    const archiveResponse = await handleApiRequest(new Request(`http://local/api/projects/${project.id}`, { method: 'DELETE' }), context);
+    const activeProjectsResponse = await handleApiRequest(new Request('http://local/api/projects'), context);
+    const archivedProjectsResponse = await handleApiRequest(new Request('http://local/api/projects?view=archived'), context);
+    const restoreResponse = await handleApiRequest(
+      new Request(`http://local/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: false })
+      }),
+      context
+    );
+
+    const updatedProject = await updateResponse.json();
+    const archivedProject = await archiveResponse.json();
+    const activeProjects = await activeProjectsResponse.json();
+    const archivedProjects = await archivedProjectsResponse.json();
+    const restoredProject = await restoreResponse.json();
+
+    expect(updatedProject.name).toBe('کاری ویرایش‌شده');
+    expect(archivedProject.archivedAt).toEqual(expect.any(String));
+    expect(activeProjects.some((item: { id: string }) => item.id === project.id)).toBe(false);
+    expect(archivedProjects.some((item: { id: string }) => item.id === project.id)).toBe(true);
+    expect(restoredProject.archivedAt).toBeNull();
+    expect(context.store.getTask(task.id)?.projectId).toBe(project.id);
+    context.store.close();
+  });
+
   it('supports task comments and detail fields', async () => {
     const context = createContext();
     const taskResponse = await handleApiRequest(

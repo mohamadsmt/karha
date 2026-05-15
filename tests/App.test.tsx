@@ -1,6 +1,45 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-multi-date-picker', async () => {
+  const React = await import('react');
+
+  type MockDatePickerProps = {
+    render?: (
+      value: string,
+      openCalendar: () => void,
+      handleValueChange: () => void,
+      locale: unknown,
+      separator: string
+    ) => ReactNode;
+    onChange?: (date: { toDate: () => Date }) => void;
+  };
+
+  return {
+    default: function MockDatePicker({ render, onChange }: MockDatePickerProps) {
+      const openCalendar = () => {
+        onChange?.({
+          toDate: () => new Date(2026, 4, 20, 14, 30, 45, 500)
+        });
+      };
+
+      return React.createElement('span', { 'data-testid': 'mock-date-picker' }, render?.('', openCalendar, () => undefined, {}, '/'));
+    }
+  };
+});
+
+vi.mock('react-multi-date-picker/plugins/time_picker', async () => {
+  const React = await import('react');
+
+  return {
+    default: function MockTimePicker() {
+      return React.createElement('span', { 'data-testid': 'mock-time-picker' });
+    }
+  };
+});
+
 import { App } from '../src/App';
 
 const settings = {
@@ -39,7 +78,14 @@ const task = {
 
 const tag = { id: 'tag-1', name: 'خانه', color: '#0f766e' };
 const renamedTag = { id: 'tag-2', name: 'کار', color: '#0f766e' };
-const project = { id: 'project-1', name: 'کار', color: '#2563eb' };
+const project = { id: 'project-1', name: 'کار', color: '#2563eb', archivedAt: null };
+const archivedProject = {
+  id: 'project-archived',
+  name: 'قدیمی',
+  color: '#b45309',
+  archivedAt: '2026-05-15T10:00:00.000Z'
+};
+const pickerDate = new Date(2026, 4, 20, 14, 30, 0, 0);
 
 const openSubtask = {
   ...task,
@@ -64,24 +110,62 @@ const completedSubtask = {
   subtasks: []
 };
 
+function lastTaskPatchBody(taskId = 'task-1'): string {
+  const patches = vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes(`/api/tasks/${taskId}`) && init?.method === 'PATCH');
+  return String(patches.at(-1)?.[1]?.body ?? '');
+}
+
+function lastQuickAddBody(): string {
+  const calls = vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes('/api/tasks/quick-add') && init?.method === 'POST');
+  return String(calls.at(-1)?.[1]?.body ?? '');
+}
+
+function taskDeleteCalls(taskId = 'task-1'): Array<unknown[]> {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes(`/api/tasks/${taskId}`) && init?.method === 'DELETE');
+}
+
+function projectRequestBody(projectId: string, method: string): string {
+  const latestCall = projectRequestCalls(projectId, method).at(-1);
+  return String(latestCall?.[1]?.body ?? '');
+}
+
+function projectRequestCalls(projectId: string, method: string) {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes(`/api/projects/${projectId}`) && init?.method === method);
+}
+
 describe('App', () => {
   let tasksResponse: Array<Record<string, unknown>>;
   let archivedTasksResponse: Array<Record<string, unknown>>;
   let projectsResponse: Array<typeof project>;
+  let archivedProjectsResponse: Array<typeof archivedProject>;
   let tagsResponse: Array<typeof tag>;
 
   beforeEach(() => {
     tasksResponse = [task];
     archivedTasksResponse = [];
     projectsResponse = [];
+    archivedProjectsResponse = [];
     tagsResponse = [];
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('style');
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('prompt', vi.fn(() => 'کار ویرایش‌شده'));
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         if (url.includes('/api/settings')) return json(settings);
+        if (url.includes('/api/projects?view=archived')) return json(archivedProjectsResponse);
+        if (url.includes('/api/projects/') && init?.method === 'PATCH') return json({ ...project, name: 'کار ویرایش‌شده' });
+        if (url.includes('/api/projects/') && init?.method === 'DELETE') return json({ ...project, archivedAt: new Date().toISOString() });
         if (url.includes('/api/projects')) return json(projectsResponse);
         if (url.includes('/api/tags') && init?.method === 'POST') return json(renamedTag);
         if (url.includes('/api/tags')) return json(tagsResponse);
@@ -107,6 +191,10 @@ describe('App', () => {
     );
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders the Persian RTL task surface and quick-add flow', async () => {
     render(<App />);
     expect(await screen.findByText('کارها')).toBeInTheDocument();
@@ -126,6 +214,118 @@ describe('App', () => {
       expect.stringContaining('/api/tasks/quick-add'),
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('uses the open project as quick-add context', async () => {
+    projectsResponse = [project];
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'کار' }));
+    await userEvent.type(screen.getByPlaceholderText(/ارسال گزارش/), 'تسک پروژه');
+    await userEvent.click(screen.getByRole('button', { name: 'افزودن' }));
+
+    expect(lastQuickAddBody()).toContain(`"projectId":"${project.id}"`);
+  });
+
+  it('edits and archives projects from the sidebar', async () => {
+    projectsResponse = [project];
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: 'کار' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'ویرایش کار' }));
+    expect(prompt).toHaveBeenCalledWith('نام جدید پروژه', 'کار');
+    expect(projectRequestBody(project.id, 'PATCH')).toContain('"name":"کار ویرایش‌شده"');
+
+    await userEvent.click(screen.getByRole('button', { name: 'آرشیو کار' }));
+    expect(confirm).toHaveBeenCalledWith('پروژه «کار» آرشیو شود؟ تسک‌های داخل پروژه حذف نمی‌شوند.');
+    expect(projectRequestCalls(project.id, 'DELETE')).toHaveLength(1);
+  });
+
+  it('shows archived projects and restores them', async () => {
+    archivedProjectsResponse = [archivedProject];
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('پروژه‌های آرشیوشده'));
+    await userEvent.click(screen.getByRole('button', { name: 'بازگردانی قدیمی' }));
+
+    expect(projectRequestBody(archivedProject.id, 'PATCH')).toContain('"archived":false');
+  });
+
+  it('clarifies task duration and section fields in the drawer', async () => {
+    const { container } = render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+
+    expect(screen.getByLabelText('مدت زمان به دقیقه')).toHaveAttribute('placeholder', 'مثلاً ۳۰');
+    expect(screen.getByRole('button', { name: 'عدد را به دقیقه وارد کنید؛ برای برآورد زمان انجام تسک.' })).toBeInTheDocument();
+    expect(screen.getByLabelText('بخش پروژه')).toHaveAttribute('placeholder', 'مثلاً جلسه یا بک‌لاگ');
+    expect(
+      screen.getByRole('button', { name: 'گروه‌بندی داخل همان پروژه؛ در افزودن سریع با /بخش هم تنظیم می‌شود.' })
+    ).toBeInTheDocument();
+    expect(container.querySelector('.field-hint')).toBeNull();
+  });
+
+  it('closes the task drawer when clicking outside it', async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+
+    const dialog = screen.getByRole('dialog', { name: 'جزئیات تسک' });
+    await userEvent.click(screen.getByDisplayValue('مرور برنامه امروز'));
+
+    expect(screen.getByRole('dialog', { name: 'جزئیات تسک' })).toBeInTheDocument();
+
+    await userEvent.click(dialog);
+
+    expect(screen.queryByRole('dialog', { name: 'جزئیات تسک' })).not.toBeInTheDocument();
+  });
+
+  it('asks for confirmation before archiving a task', async () => {
+    vi.mocked(confirm).mockReturnValue(false);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'جزئیات تسک' })).getByRole('button', { name: 'آرشیو' }));
+
+    expect(confirm).toHaveBeenCalledWith('این تسک آرشیو شود؟');
+    expect(taskDeleteCalls()).toHaveLength(0);
+    expect(screen.getByRole('dialog', { name: 'جزئیات تسک' })).toBeInTheDocument();
+  });
+
+  it('archives a task after confirmation', async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'جزئیات تسک' })).getByRole('button', { name: 'آرشیو' }));
+
+    expect(confirm).toHaveBeenCalledWith('این تسک آرشیو شود؟');
+    expect(taskDeleteCalls()).toHaveLength(1);
+  });
+
+  it('dismisses undo notifications after a few seconds', async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+
+    vi.useFakeTimers();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'جزئیات تسک' })).getByRole('button', { name: 'آرشیو' }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('تسک آرشیو شد')).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.queryByText('تسک آرشیو شد')).not.toBeInTheDocument();
   });
 
   it('opens the keyboard shortcut overlay', async () => {
@@ -293,6 +493,57 @@ describe('App', () => {
         body: expect.stringContaining('"tagIds":["tag-2"]')
       })
     );
+  });
+
+  it('sets an empty due date from the Persian date/time picker with a 09:00 default', async () => {
+    tasksResponse = [{ ...task, dueAt: null }];
+
+    render(<App />);
+
+    expect(await screen.findByText('کارها')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Inbox/ }));
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(screen.getByRole('button', { name: 'انتخاب تاریخ' }));
+
+    const expectedIso = new Date(2026, 4, 20, 9, 0, 0, 0).toISOString();
+    await waitFor(() => {
+      expect(lastTaskPatchBody()).toContain(`"dueAt":"${expectedIso}"`);
+    });
+  });
+
+  it.each([
+    { label: 'ددلاین', field: 'deadlineAt' },
+    { label: 'یادآور', field: 'reminderAt' }
+  ])('updates $label from the Persian date/time picker', async ({ label, field }) => {
+    tasksResponse = [
+      {
+        ...task,
+        deadlineAt: '2026-05-15T09:00:00.000Z',
+        reminderAt: '2026-05-15T08:30:00.000Z'
+      }
+    ];
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(screen.getByRole('button', { name: `انتخاب ${label}` }));
+
+    await waitFor(() => {
+      expect(lastTaskPatchBody()).toContain(`"${field}":"${pickerDate.toISOString()}"`);
+    });
+  });
+
+  it('clears a date field from the drawer control', async () => {
+    tasksResponse = [{ ...task, reminderAt: '2026-05-15T08:30:00.000Z' }];
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(screen.getByRole('button', { name: 'پاک کردن یادآور' }));
+
+    await waitFor(() => {
+      expect(lastTaskPatchBody()).toContain('"reminderAt":null');
+    });
   });
 });
 

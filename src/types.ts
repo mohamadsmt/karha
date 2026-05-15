@@ -13,6 +13,7 @@ export interface Project {
   id: string;
   name: string;
   color: string;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
