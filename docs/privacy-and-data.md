@@ -30,3 +30,13 @@ an ignored `.env.local` file to set `TASKS_DATA_DIR=.local-data` and
 
 Only use repository-local data directories when the directory is ignored by
 Git.
+
+## Local assistant data flow
+
+The assistant uses the local API server to send task context to Ollama. With the
+default `OLLAMA_BASE_URL`, that traffic stays on `127.0.0.1:11434`. The selected
+assistant model is stored in the local SQLite database.
+
+If `OLLAMA_BASE_URL` is changed to a remote endpoint, task titles, notes,
+projects, labels, dates, and comments included in assistant context may leave
+the machine. Only point it at a remote server if that is intentional.

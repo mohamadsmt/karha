@@ -85,6 +85,15 @@ const archivedProject = {
   color: '#b45309',
   archivedAt: '2026-05-15T10:00:00.000Z'
 };
+const assistantModel = {
+  name: 'llama3.1:8b',
+  model: 'llama3.1:8b',
+  size: 4_900_000_000,
+  modifiedAt: '2026-05-15T09:00:00.000Z',
+  family: 'llama',
+  parameterSize: '8B',
+  quantizationLevel: 'Q4_K_M'
+};
 const pickerDate = new Date(2026, 4, 20, 14, 30, 0, 0);
 
 const openSubtask = {
@@ -141,12 +150,37 @@ function projectRequestCalls(projectId: string, method: string) {
     .mock.calls.filter(([url, init]) => String(url).includes(`/api/projects/${projectId}`) && init?.method === method);
 }
 
+function assistantSettingsPatchBody(): string {
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes('/api/assistant/settings') && init?.method === 'PATCH')
+    .at(-1);
+  return String(call?.[1]?.body ?? '');
+}
+
+function assistantPlanBody(): string {
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes('/api/assistant/plan') && init?.method === 'POST')
+    .at(-1);
+  return String(call?.[1]?.body ?? '');
+}
+
+function assistantApplyCalls(): Array<unknown[]> {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([url, init]) => String(url).includes('/api/assistant/apply') && init?.method === 'POST');
+}
+
 describe('App', () => {
   let tasksResponse: Array<Record<string, unknown>>;
   let archivedTasksResponse: Array<Record<string, unknown>>;
   let projectsResponse: Array<typeof project>;
   let archivedProjectsResponse: Array<typeof archivedProject>;
   let tagsResponse: Array<typeof tag>;
+  let assistantReachable: boolean;
+  let assistantSelectedModel: string | null;
+  let assistantPlanResponse: Record<string, unknown>;
 
   beforeEach(() => {
     tasksResponse = [task];
@@ -154,6 +188,20 @@ describe('App', () => {
     projectsResponse = [];
     archivedProjectsResponse = [];
     tagsResponse = [];
+    assistantReachable = true;
+    assistantSelectedModel = null;
+    assistantPlanResponse = {
+      reply: 'پیشنهاد آماده است.',
+      clarificationQuestion: null,
+      operations: [
+        {
+          id: 'op-1',
+          type: 'create_task',
+          summary: 'ساخت تسک گزارش',
+          task: { title: 'گزارش فردا', dueAt: '2026-05-16T09:00:00.000Z' }
+        }
+      ]
+    };
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('style');
@@ -162,6 +210,21 @@ describe('App', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/api/assistant/models')) {
+          return json({
+            reachable: assistantReachable,
+            selectedModel: assistantSelectedModel,
+            models: assistantReachable ? [assistantModel] : [],
+            error: assistantReachable ? undefined : 'Ollama در دسترس نیست.'
+          });
+        }
+        if (url.includes('/api/assistant/settings') && init?.method === 'PATCH') {
+          assistantSelectedModel = JSON.parse(String(init.body)).selectedModel;
+          return json({ selectedModel: assistantSelectedModel });
+        }
+        if (url.includes('/api/assistant/settings')) return json({ selectedModel: assistantSelectedModel });
+        if (url.includes('/api/assistant/plan') && init?.method === 'POST') return json(assistantPlanResponse);
+        if (url.includes('/api/assistant/apply') && init?.method === 'POST') return json({ ok: true, applied: [] });
         if (url.includes('/api/settings')) return json(settings);
         if (url.includes('/api/projects?view=archived')) return json(archivedProjectsResponse);
         if (url.includes('/api/projects/') && init?.method === 'PATCH') return json({ ...project, name: 'کار ویرایش‌شده' });
@@ -349,6 +412,82 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'روشن' }));
     expect(document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('opens the assistant panel and saves a selected Ollama model', async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'دستیار' }));
+    expect(screen.getByRole('dialog', { name: 'دستیار هوشمند' })).toBeInTheDocument();
+
+    await userEvent.selectOptions(await screen.findByLabelText('مدل Ollama'), 'llama3.1:8b');
+
+    await waitFor(() => {
+      expect(assistantSettingsPatchBody()).toContain('"selectedModel":"llama3.1:8b"');
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'بستن دستیار' }));
+    expect(screen.queryByRole('dialog', { name: 'دستیار هوشمند' })).not.toBeInTheDocument();
+  });
+
+  it('shows the assistant Ollama error and disables sending', async () => {
+    assistantReachable = false;
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'دستیار' }));
+
+    expect(await screen.findByText('Ollama قطع است')).toBeInTheDocument();
+    expect(screen.getByText('Ollama در دسترس نیست.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ارسال به دستیار' })).toBeDisabled();
+  });
+
+  it('warns when the saved assistant model is no longer installed', async () => {
+    assistantSelectedModel = 'missing:latest';
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'دستیار' }));
+
+    expect(await screen.findByText('مدل ذخیره‌شده دیگر نصب نیست.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ارسال به دستیار' })).toBeDisabled();
+  });
+
+  it('previews assistant operations and applies only after confirmation', async () => {
+    assistantSelectedModel = 'llama3.1:8b';
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'دستیار' }));
+    await userEvent.type(screen.getByPlaceholderText(/سه زیرتسک/), 'برای فردا گزارش بساز');
+    await userEvent.click(screen.getByRole('button', { name: 'ارسال به دستیار' }));
+
+    expect(await screen.findByText('ساخت تسک گزارش')).toBeInTheDocument();
+    expect(assistantPlanBody()).toContain('برای فردا گزارش بساز');
+    expect(assistantApplyCalls()).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'اعمال تاییدشده' }));
+
+    await waitFor(() => {
+      expect(assistantApplyCalls()).toHaveLength(1);
+    });
+    expect(screen.getByText('تغییرات اعمال شد.')).toBeInTheDocument();
+  });
+
+  it('cancels assistant previews without applying changes', async () => {
+    assistantSelectedModel = 'llama3.1:8b';
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'دستیار' }));
+    await userEvent.type(screen.getByPlaceholderText(/سه زیرتسک/), 'یک تسک جدید بساز');
+    await userEvent.click(screen.getByRole('button', { name: 'ارسال به دستیار' }));
+    expect(await screen.findByText('ساخت تسک گزارش')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'لغو' }));
+
+    expect(screen.queryByText('ساخت تسک گزارش')).not.toBeInTheDocument();
+    expect(assistantApplyCalls()).toHaveLength(0);
   });
 
   it('renders collapsible subtasks under the parent row', async () => {

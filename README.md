@@ -36,6 +36,9 @@ Public repository:
   for completion, `Delete` for archive, `1..4` for priority, `d` to schedule
   for today, and `?` for the shortcut guide.
 - Undo toasts for completion, archive, date changes, and manual reordering.
+- Local Ollama assistant panel with saved model selection, preview-before-apply
+  task changes, task/subtask creation, task edits, comments, and completion
+  actions.
 - Local SQLite storage with simple migrations.
 - JSON export/import and CSV export.
 
@@ -43,6 +46,9 @@ Public repository:
 
 - Node.js and npm
 - A local environment for the UI and API. The server binds to `127.0.0.1`.
+- Optional: [Ollama](https://ollama.com/) running locally at
+  `http://127.0.0.1:11434` for the assistant panel. Override with
+  `OLLAMA_BASE_URL` only if you intentionally want another endpoint.
 
 ## Run Locally
 
@@ -112,6 +118,10 @@ Main routes:
 - `GET/POST /api/saved-filters`
 - `DELETE /api/saved-filters/:id`
 - `GET /api/stats`
+- `GET /api/assistant/models`
+- `GET/PATCH /api/assistant/settings`
+- `POST /api/assistant/plan`
+- `POST /api/assistant/apply`
 - `GET /api/backup/export`
 - `POST /api/backup/import`
 - `GET /api/backup/csv`

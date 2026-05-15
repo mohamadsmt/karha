@@ -2,12 +2,21 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { KarhaDatabase } from './database';
-import type { AppSettings, BackupPayload } from '../src/types';
+import {
+  AssistantRequestError,
+  applyAssistantOperations,
+  assertModelAvailable,
+  generateAssistantPlan,
+  listOllamaModels
+} from './assistant';
+import type { AppSettings, AssistantOperation, BackupPayload } from '../src/types';
 
 export interface ApiContext {
   store: KarhaDatabase;
   settings: AppSettings;
   distDir?: string;
+  ollamaBaseUrl?: string;
+  fetchImpl?: typeof fetch;
 }
 
 export async function handleApiRequest(request: Request, context: ApiContext): Promise<Response> {
@@ -22,6 +31,54 @@ export async function handleApiRequest(request: Request, context: ApiContext): P
 
     if (method === 'GET' && pathname === '/api/settings') {
       return json(context.settings);
+    }
+
+    if (method === 'GET' && pathname === '/api/assistant/models') {
+      const settings = context.store.getAssistantSettings();
+      try {
+        const models = await listOllamaModels({ baseUrl: context.ollamaBaseUrl, fetchImpl: context.fetchImpl });
+        return json({ reachable: true, selectedModel: settings.selectedModel, models });
+      } catch (error) {
+        const message = error instanceof AssistantRequestError ? error.message : 'Ollama در دسترس نیست.';
+        return json({ reachable: false, selectedModel: settings.selectedModel, models: [], error: message });
+      }
+    }
+
+    if (method === 'GET' && pathname === '/api/assistant/settings') {
+      return json(context.store.getAssistantSettings());
+    }
+
+    if (method === 'PATCH' && pathname === '/api/assistant/settings') {
+      const body = (await safeJson(request)) as { selectedModel?: unknown };
+      const selectedModel = body.selectedModel === null ? null : typeof body.selectedModel === 'string' ? body.selectedModel.trim() : undefined;
+      if (selectedModel === undefined) return json({ error: 'selectedModel is required.' }, { status: 400 });
+      if (selectedModel) {
+        await assertModelAvailable(selectedModel, { baseUrl: context.ollamaBaseUrl, fetchImpl: context.fetchImpl });
+      }
+      return json(context.store.updateAssistantSettings({ selectedModel }));
+    }
+
+    if (method === 'POST' && pathname === '/api/assistant/plan') {
+      const body = (await safeJson(request)) as { message?: unknown };
+      const message = typeof body.message === 'string' ? body.message : '';
+      const { selectedModel } = context.store.getAssistantSettings();
+      if (!selectedModel) return json({ error: 'Assistant model is not selected.' }, { status: 400 });
+      await assertModelAvailable(selectedModel, { baseUrl: context.ollamaBaseUrl, fetchImpl: context.fetchImpl });
+      return json(
+        await generateAssistantPlan({
+          store: context.store,
+          message,
+          model: selectedModel,
+          baseUrl: context.ollamaBaseUrl,
+          fetchImpl: context.fetchImpl
+        })
+      );
+    }
+
+    if (method === 'POST' && pathname === '/api/assistant/apply') {
+      const body = (await safeJson(request)) as { operations?: unknown };
+      if (!Array.isArray(body.operations)) return json({ error: 'operations must be an array.' }, { status: 400 });
+      return json(applyAssistantOperations(context.store, body.operations as AssistantOperation[]));
     }
 
     if (method === 'GET' && pathname === '/api/tasks') {
@@ -153,7 +210,7 @@ export async function handleApiRequest(request: Request, context: ApiContext): P
     return json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return json({ error: message }, { status: 500 });
+    return json({ error: message }, { status: error instanceof AssistantRequestError ? error.status : 500 });
   }
 }
 

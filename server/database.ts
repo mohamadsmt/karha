@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type {
   BackupPayload,
+  AssistantSettings,
   FocusSession,
   Habit,
   HabitLog,
@@ -304,6 +305,25 @@ export class KarhaDatabase {
 
   deleteTask(id: string): Task {
     return this.updateTask(id, { archived: true });
+  }
+
+  getAssistantSettings(): AssistantSettings {
+    const settings = optionalRow<{ selected_model: string | null }>(
+      this.db.prepare('SELECT selected_model FROM assistant_settings WHERE id = 1').get()
+    );
+    return { selectedModel: settings?.selected_model ?? null };
+  }
+
+  updateAssistantSettings(input: AssistantSettings): AssistantSettings {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO assistant_settings (id, selected_model, updated_at)
+         VALUES (1, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET selected_model = excluded.selected_model, updated_at = excluded.updated_at`
+      )
+      .run(input.selectedModel, now);
+    return this.getAssistantSettings();
   }
 
   listProjects(query: ProjectQuery = {}): Project[] {
@@ -732,6 +752,12 @@ export class KarhaDatabase {
         color TEXT NOT NULL,
         criteria TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS assistant_settings (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        selected_model TEXT,
+        updated_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);

@@ -294,6 +294,9 @@ select {
 
 .inline-form button,
 .quick-capture button,
+.assistant-toggle-button,
+.assistant-compose button,
+.assistant-actions button,
 .button-row button,
 .habit-row button,
 .undo-toast button,
@@ -347,6 +350,18 @@ select {
 
 .search {
   max-width: 260px;
+}
+
+.topbar-actions {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 260px);
+  gap: 8px;
+  align-items: center;
+}
+
+.assistant-toggle-button {
+  min-height: 38px;
+  white-space: nowrap;
 }
 
 .quick-capture {
@@ -655,6 +670,169 @@ select {
   padding: 18px;
   background: var(--backdrop);
   backdrop-filter: blur(2px);
+}
+
+.assistant-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  display: flex;
+  justify-content: flex-start;
+  direction: rtl;
+  background: var(--backdrop);
+  backdrop-filter: blur(2px);
+}
+
+.assistant-panel {
+  width: min(430px, 100vw);
+  height: 100vh;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: -18px 0 60px var(--shadow);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+}
+
+.assistant-header {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.assistant-header h2,
+.assistant-preview h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.assistant-header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.assistant-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
+.assistant-settings label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.assistant-settings .quiet-button,
+.assistant-actions .quiet-button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 8px 10px;
+}
+
+.assistant-status {
+  margin: 10px 14px 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 0.82rem;
+}
+
+.assistant-status.warning {
+  background: color-mix(in srgb, var(--amber) 13%, transparent);
+  color: var(--amber);
+}
+
+.assistant-status.error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.assistant-messages {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.assistant-message {
+  max-width: 88%;
+  margin: 0;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 9px 10px;
+  line-height: 1.7;
+}
+
+.assistant-message.user {
+  justify-self: end;
+  background: var(--accent-soft);
+}
+
+.assistant-preview {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.assistant-operation {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.assistant-operation input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.assistant-operation span {
+  display: grid;
+  gap: 2px;
+}
+
+.assistant-operation small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assistant-compose {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.assistant-compose textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.assistant-compose button:disabled,
+.assistant-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .task-drawer,
@@ -1174,6 +1352,10 @@ kbd {
 @media (max-width: 620px) {
   .topbar {
     display: grid;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 1fr;
   }
 
   .search {

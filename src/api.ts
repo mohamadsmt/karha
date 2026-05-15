@@ -1,4 +1,9 @@
 import type {
+  AssistantApplyResponse,
+  AssistantModelsResponse,
+  AssistantOperation,
+  AssistantPlanResponse,
+  AssistantSettings,
   AppSettings,
   FocusSession,
   Habit,
@@ -108,5 +113,22 @@ export const api = {
     }),
   deleteSavedFilter: (id: string) => request<{ ok: true }>(`/api/saved-filters/${id}`, { method: 'DELETE' }),
   stats: () => request<StatsSummary>('/api/stats'),
+  assistantModels: () => request<AssistantModelsResponse>('/api/assistant/models'),
+  assistantSettings: () => request<AssistantSettings>('/api/assistant/settings'),
+  updateAssistantSettings: (body: AssistantSettings) =>
+    request<AssistantSettings>('/api/assistant/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }),
+  assistantPlan: (message: string) =>
+    request<AssistantPlanResponse>('/api/assistant/plan', {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    }),
+  applyAssistantOperations: (operations: AssistantOperation[]) =>
+    request<AssistantApplyResponse>('/api/assistant/apply', {
+      method: 'POST',
+      body: JSON.stringify({ operations })
+    }),
   exportBackup: () => request<unknown>('/api/backup/export')
 };

@@ -121,6 +121,81 @@ export interface AppSettings {
   notifications: 'browser-only';
 }
 
+export interface AssistantModel {
+  name: string;
+  model: string;
+  size: number | null;
+  modifiedAt: string | null;
+  family: string | null;
+  parameterSize: string | null;
+  quantizationLevel: string | null;
+}
+
+export interface AssistantSettings {
+  selectedModel: string | null;
+}
+
+export interface AssistantModelsResponse {
+  reachable: boolean;
+  selectedModel: string | null;
+  models: AssistantModel[];
+  error?: string;
+}
+
+export type AssistantOperationType =
+  | 'create_task'
+  | 'update_task'
+  | 'create_subtask'
+  | 'add_comment'
+  | 'complete_task'
+  | 'reopen_task';
+
+export interface AssistantTaskDraft {
+  title?: string;
+  notes?: string;
+  projectName?: string | null;
+  section?: string | null;
+  dueAt?: string | null;
+  deadlineAt?: string | null;
+  reminderAt?: string | null;
+  scheduledStart?: string | null;
+  durationMinutes?: number | null;
+  priority?: TaskPriority;
+  energy?: Task['energy'];
+  recurrence?: RecurrenceRule | null;
+  tagNames?: string[];
+  completed?: boolean;
+}
+
+export interface AssistantOperation {
+  id: string;
+  type: AssistantOperationType;
+  summary: string;
+  targetTaskId?: string | null;
+  task?: AssistantTaskDraft | null;
+  patch?: AssistantTaskDraft | null;
+  commentBody?: string | null;
+  subtasks?: AssistantTaskDraft[];
+}
+
+export interface AssistantPlanResponse {
+  reply: string;
+  clarificationQuestion: string | null;
+  operations: AssistantOperation[];
+}
+
+export interface AssistantApplyResult {
+  operationId: string;
+  task?: Task;
+  tasks?: Task[];
+  comment?: TaskComment;
+}
+
+export interface AssistantApplyResponse {
+  ok: true;
+  applied: AssistantApplyResult[];
+}
+
 export interface BackupPayload {
   exportedAt: string;
   version: number;

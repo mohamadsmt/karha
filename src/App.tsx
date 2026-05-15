@@ -24,6 +24,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { api } from './api';
 import type {
+  AssistantModel,
+  AssistantOperation,
+  AssistantPlanResponse,
+  AssistantSettings,
   AppSettings,
   Habit,
   Project,
@@ -96,6 +100,12 @@ interface UndoState {
   undo: () => Promise<unknown>;
 }
 
+interface AssistantChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  body: string;
+}
+
 type ThemeMode = 'light' | 'dark';
 
 const themeStorageKey = 'karha.theme';
@@ -155,6 +165,7 @@ export function App() {
   const [focusSeconds, setFocusSeconds] = useState(25 * 60);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [goPrefix, setGoPrefix] = useState(false);
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => readCollapsedTaskIds());
@@ -794,13 +805,18 @@ export function App() {
             <h1>{pageTitle}</h1>
             <p>{view === 'today' ? 'عقب افتاده ها و کارهای امروز' : getPageHint(view)}</p>
           </div>
-          <input
-            ref={searchRef}
-            className="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="جستجو /"
-          />
+          <div className="topbar-actions">
+            <button className="assistant-toggle-button" type="button" onClick={() => setAssistantOpen(true)}>
+              دستیار
+            </button>
+            <input
+              ref={searchRef}
+              className="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="جستجو /"
+            />
+          </div>
         </header>
 
         <form className="quick-capture" onSubmit={submitQuickAdd}>
@@ -930,6 +946,8 @@ export function App() {
           }}
         />
       ) : null}
+
+      {assistantOpen ? <AssistantPanel onClose={() => setAssistantOpen(false)} onApplied={load} /> : null}
 
       {undo ? (
         <div className="undo-toast">
@@ -1447,6 +1465,211 @@ function InfoTooltip({ text, placement = 'right' }: { text: string; placement?: 
         {text}
       </span>
     </span>
+  );
+}
+
+function AssistantPanel({ onClose, onApplied }: { onClose: () => void; onApplied: () => Promise<void> }) {
+  const [models, setModels] = useState<AssistantModel[]>([]);
+  const [settings, setSettings] = useState<AssistantSettings>({ selectedModel: null });
+  const [reachable, setReachable] = useState<boolean | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [loadingMeta, setLoadingMeta] = useState(true);
+  const [savingModel, setSavingModel] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
+  const [pendingPlan, setPendingPlan] = useState<AssistantPlanResponse | null>(null);
+  const [selectedOperationIds, setSelectedOperationIds] = useState<Set<string>>(new Set());
+  const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const selectedModelMissing = Boolean(settings.selectedModel && !models.some((model) => model.name === settings.selectedModel));
+  const canSend = Boolean(settings.selectedModel && reachable && !selectedModelMissing && !planning);
+
+  useEffect(() => {
+    void loadAssistantMeta();
+  }, []);
+
+  async function loadAssistantMeta() {
+    setLoadingMeta(true);
+    setAssistantError(null);
+    try {
+      const [modelsResponse, settingsResponse] = await Promise.all([api.assistantModels(), api.assistantSettings()]);
+      setModels(modelsResponse.models);
+      setReachable(modelsResponse.reachable);
+      setSettings({ selectedModel: settingsResponse.selectedModel ?? modelsResponse.selectedModel });
+      setStatusMessage(modelsResponse.reachable ? null : modelsResponse.error ?? 'Ollama در دسترس نیست.');
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : 'خطا در بارگذاری دستیار');
+    } finally {
+      setLoadingMeta(false);
+    }
+  }
+
+  async function saveSelectedModel(nextModel: string | null) {
+    setSavingModel(true);
+    setAssistantError(null);
+    try {
+      const nextSettings = await api.updateAssistantSettings({ selectedModel: nextModel });
+      setSettings(nextSettings);
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : 'مدل ذخیره نشد.');
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
+  async function submitAssistantMessage(event: FormEvent) {
+    event.preventDefault();
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || !canSend) return;
+
+    setMessage('');
+    setPlanning(true);
+    setAssistantError(null);
+    setPendingPlan(null);
+    setSelectedOperationIds(new Set());
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', body: trimmedMessage }]);
+
+    try {
+      const plan = await api.assistantPlan(trimmedMessage);
+      setPendingPlan(plan);
+      setSelectedOperationIds(new Set(plan.operations.map((operation) => operation.id)));
+      const assistantBody = plan.clarificationQuestion ?? plan.reply;
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', body: assistantBody }]);
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : 'دستیار پاسخ نداد.');
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function applySelectedOperations() {
+    if (!pendingPlan) return;
+    const operations = pendingPlan.operations.filter((operation) => selectedOperationIds.has(operation.id));
+    if (!operations.length) return;
+
+    setApplying(true);
+    setAssistantError(null);
+    try {
+      await api.applyAssistantOperations(operations);
+      setPendingPlan(null);
+      setSelectedOperationIds(new Set());
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', body: 'تغییرات اعمال شد.' }]);
+      await onApplied();
+    } catch (error) {
+      setAssistantError(error instanceof Error ? error.message : 'تغییرات اعمال نشد.');
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function toggleOperation(operationId: string) {
+    setSelectedOperationIds((current) => {
+      const next = new Set(current);
+      if (next.has(operationId)) next.delete(operationId);
+      else next.add(operationId);
+      return next;
+    });
+  }
+
+  return (
+    <div className="assistant-backdrop" role="dialog" aria-modal="true" aria-label="دستیار هوشمند">
+      <aside className="assistant-panel">
+        <header className="assistant-header">
+          <div>
+            <h2>دستیار</h2>
+            <p>{reachable === false ? 'Ollama قطع است' : settings.selectedModel ?? 'مدل انتخاب نشده'}</p>
+          </div>
+          <button className="drawer-close-button" type="button" onClick={onClose} aria-label="بستن دستیار">
+            ×
+          </button>
+        </header>
+
+        <section className="assistant-settings">
+          <label>
+            مدل Ollama
+            <select
+              value={settings.selectedModel ?? ''}
+              disabled={loadingMeta || savingModel || !reachable}
+              onChange={(event) => void saveSelectedModel(event.target.value || null)}
+            >
+              <option value="">انتخاب مدل</option>
+              {models.map((model) => (
+                <option value={model.name} key={model.name}>
+                  {formatModelLabel(model)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="quiet-button" onClick={() => void loadAssistantMeta()}>
+            تازه‌سازی
+          </button>
+        </section>
+
+        {statusMessage ? <div className="assistant-status warning">{statusMessage}</div> : null}
+        {selectedModelMissing ? <div className="assistant-status warning">مدل ذخیره‌شده دیگر نصب نیست.</div> : null}
+        {assistantError ? <div className="assistant-status error">{assistantError}</div> : null}
+
+        <div className="assistant-messages" aria-live="polite">
+          {messages.length ? (
+            messages.map((item) => (
+              <p className={`assistant-message ${item.role}`} key={item.id}>
+                {item.body}
+              </p>
+            ))
+          ) : (
+            <p className="assistant-message assistant">آماده</p>
+          )}
+        </div>
+
+        {pendingPlan?.operations.length ? (
+          <section className="assistant-preview" aria-label="پیش‌نمایش عملیات">
+            <h3>پیش‌نمایش</h3>
+            {pendingPlan.operations.map((operation) => (
+              <label className="assistant-operation" key={operation.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedOperationIds.has(operation.id)}
+                  onChange={() => toggleOperation(operation.id)}
+                />
+                <span>
+                  <strong>{operation.summary}</strong>
+                  <small>{operationTypeLabel(operation.type)}</small>
+                </span>
+              </label>
+            ))}
+            <div className="assistant-actions">
+              <button type="button" disabled={applying || !selectedOperationIds.size} onClick={() => void applySelectedOperations()}>
+                اعمال تاییدشده
+              </button>
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={applying}
+                onClick={() => {
+                  setPendingPlan(null);
+                  setSelectedOperationIds(new Set());
+                }}
+              >
+                لغو
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        <form className="assistant-compose" onSubmit={submitAssistantMessage}>
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="مثلاً: برای فردا سه زیرتسک آماده‌سازی گزارش بساز"
+          />
+          <button type="submit" disabled={!message.trim() || !canSend}>
+            {planning ? 'در حال بررسی' : 'ارسال به دستیار'}
+          </button>
+        </form>
+      </aside>
+    </div>
   );
 }
 
@@ -2075,6 +2298,27 @@ function formatRecurrence(frequency: string): string {
   if (frequency === 'weekly') return 'هر هفته';
   if (frequency === 'monthly') return 'هر ماه';
   return 'تکرار';
+}
+
+function formatModelLabel(model: AssistantModel): string {
+  const details = [model.parameterSize, model.quantizationLevel, formatModelSize(model.size)].filter(Boolean).join(' · ');
+  return details ? `${model.name} (${details})` : model.name;
+}
+
+function formatModelSize(size: number | null): string | null {
+  if (!size) return null;
+  if (size >= 1_000_000_000) return `${toPersianDigits((size / 1_000_000_000).toFixed(1))} GB`;
+  if (size >= 1_000_000) return `${toPersianDigits(Math.round(size / 1_000_000))} MB`;
+  return `${toPersianDigits(size)} B`;
+}
+
+function operationTypeLabel(type: AssistantOperation['type']): string {
+  if (type === 'create_task') return 'ایجاد تسک';
+  if (type === 'update_task') return 'ویرایش تسک';
+  if (type === 'create_subtask') return 'زیرتسک';
+  if (type === 'add_comment') return 'کامنت';
+  if (type === 'complete_task') return 'تکمیل';
+  return 'باز کردن';
 }
 
 function todayAtNineIso(): string {
