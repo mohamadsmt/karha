@@ -317,6 +317,13 @@ export function App() {
       const target = event.target as HTMLElement | null;
       const isTyping = target?.matches('input, textarea, select, [contenteditable="true"]');
 
+      if (event.key === 'Escape' && drawerTaskId) {
+        event.preventDefault();
+        setDrawerTaskId(null);
+        quickInputRef.current?.focus();
+        return;
+      }
+
       if (event.key === '?' && !isTyping) {
         event.preventDefault();
         setShortcutsOpen(true);
@@ -392,7 +399,7 @@ export function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [focusedTask, goPrefix, taskRows.length]);
+  }, [drawerTaskId, focusedTask, goPrefix, taskRows.length]);
 
   function openView(nextView: ViewKey) {
     setView(nextView);
@@ -2148,6 +2155,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
     ['j / k', 'حرکت بین تسک ها'],
     ['Shift + j/k', 'جابجایی تسک'],
     ['Enter', 'باز کردن drawer'],
+    ['Esc', 'بستن جزئیات تسک و فوکوس افزودن سریع'],
     ['1 تا 4', 'تغییر اولویت'],
     ['d', 'زمان بندی برای امروز'],
     ['x', 'تکمیل تسک'],

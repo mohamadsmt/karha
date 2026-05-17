@@ -347,6 +347,17 @@ describe('App', () => {
     expect(screen.queryByRole('dialog', { name: 'جزئیات تسک' })).not.toBeInTheDocument();
   });
 
+  it('closes the task drawer with Escape and focuses quick add', async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByText('مرور برنامه امروز'));
+    await userEvent.click(screen.getByDisplayValue('مرور برنامه امروز'));
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog', { name: 'جزئیات تسک' })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('افزودن سریع')).toHaveFocus();
+  });
+
   it('asks for confirmation before archiving a task', async () => {
     vi.mocked(confirm).mockReturnValue(false);
 
