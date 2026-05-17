@@ -665,27 +665,18 @@ export function App() {
     <main className="app-shell">
       <aside className="sidebar" aria-label="ناوبری">
         <div className="brand">
-          <div className="brand-mark">ک</div>
-          <strong>کارها</strong>
-        </div>
-
-        <div className="theme-switch" aria-label="انتخاب تم">
+          <div className="brand-main">
+            <div className="brand-mark">ک</div>
+            <strong>کارها</strong>
+          </div>
           <button
-            className={theme === 'light' ? 'active' : ''}
+            className={`theme-toggle-button ${theme === 'light' ? 'to-dark' : 'to-light'}`}
             type="button"
-            aria-pressed={theme === 'light'}
-            onClick={() => setTheme('light')}
-          >
-            روشن
-          </button>
-          <button
-            className={theme === 'dark' ? 'active' : ''}
-            type="button"
+            aria-label={theme === 'light' ? 'تیره' : 'روشن'}
+            title={theme === 'light' ? 'تیره' : 'روشن'}
             aria-pressed={theme === 'dark'}
-            onClick={() => setTheme('dark')}
-          >
-            تیره
-          </button>
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+          />
         </div>
 
         <form className="quick-capture compact" onSubmit={submitQuickAdd}>
@@ -1338,8 +1329,10 @@ function TaskRow({
           {contextOnly ? <span>زمینه</span> : null}
           {task.projectId ? null : <span>Inbox</span>}
           {task.section ? <span>/{task.section}</span> : null}
-          {task.dueAt ? <span className={isPastDay(task.dueAt) ? 'overdue' : ''}>{formatPersianDate(task.dueAt)}</span> : null}
-          {task.dueAt ? <span>{formatPersianTime(task.dueAt)}</span> : null}
+          {task.dueAt ? (
+            <span className={isPastDay(task.dueAt) ? 'task-due overdue' : 'task-due'}>{formatPersianDate(task.dueAt)}</span>
+          ) : null}
+          {task.dueAt ? <span className="task-due">{formatPersianTime(task.dueAt)}</span> : null}
           {task.tags.map((tag) => (
             <span key={tag.id}>@{tag.name}</span>
           ))}
